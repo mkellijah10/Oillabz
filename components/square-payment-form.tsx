@@ -38,27 +38,66 @@ export default function SquarePaymentForm({
   const [cardholderName, setCardholderName] = useState(customerName || "")
   const [payments, setPayments] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isMounted, setIsMounted] = useState(false)
   const cardContainerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
 
+  // Ensure component is mounted
   useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isMounted) return
+
+    let retryCount = 0
+    const maxRetries = 20
+
+    const waitForContainer = (): Promise<HTMLElement> => {
+      return new Promise((resolve, reject) => {
+        const checkContainer = () => {
+          const container = cardContainerRef.current || document.getElementById("card-container")
+
+          if (container && container.offsetParent !== null) {
+            // Container exists and is visible
+            resolve(container as HTMLElement)
+          } else if (retryCount < maxRetries) {
+            retryCount++
+            console.log(`Waiting for container... attempt ${retryCount}/${maxRetries}`)
+            setTimeout(checkContainer, 200)
+          } else {
+            reject(new Error("Container not found after maximum retries"))
+          }
+        }
+
+        checkContainer()
+      })
+    }
+
     const initializeSquare = async () => {
       try {
         setError(null)
+        console.log("Starting Square initialization...")
 
-        // Wait for component to be fully mounted
-        await new Promise((resolve) => setTimeout(resolve, 500))
-
-        // Check if Square SDK is loaded
+        // Wait for Square SDK
         if (!window.Square) {
-          throw new Error("Square SDK not loaded. Please refresh the page.")
+          let sdkRetries = 0
+          while (!window.Square && sdkRetries < 30) {
+            await new Promise((resolve) => setTimeout(resolve, 200))
+            sdkRetries++
+          }
+
+          if (!window.Square) {
+            throw new Error("Square SDK failed to load. Please refresh the page.")
+          }
         }
 
-        // Check if container exists
-        const container = document.getElementById("card-container")
-        if (!container) {
-          throw new Error("Payment form container not ready. Please refresh the page.")
-        }
+        console.log("Square SDK loaded, waiting for container...")
+
+        // Wait for container to be ready
+        await waitForContainer()
+
+        console.log("Container ready, initializing payments...")
 
         const applicationId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID
         const locationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID
@@ -67,20 +106,22 @@ export default function SquarePaymentForm({
           throw new Error("Payment system configuration error. Please contact support.")
         }
 
-        console.log("Initializing Square with:", { applicationId, locationId })
-
         // Initialize Square Payments
         const paymentsInstance = window.Square.payments(applicationId, locationId)
         setPayments(paymentsInstance)
 
+        console.log("Creating card instance...")
+
         // Create card payment method
         const cardInstance = await paymentsInstance.card()
+
+        console.log("Attaching card to container...")
 
         // Attach to the card container
         await cardInstance.attach("#card-container")
         setCard(cardInstance)
 
-        console.log("Square payment form initialized successfully")
+        console.log("Square payment form initialized successfully!")
         setIsLoading(false)
       } catch (error: any) {
         console.error("Square initialization error:", error)
@@ -90,8 +131,10 @@ export default function SquarePaymentForm({
       }
     }
 
-    initializeSquare()
-  }, [onPaymentError])
+    // Start initialization after a short delay
+    const timer = setTimeout(initializeSquare, 100)
+    return () => clearTimeout(timer)
+  }, [isMounted, onPaymentError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -163,6 +206,15 @@ export default function SquarePaymentForm({
     window.location.reload()
   }
 
+  // Don't render until mounted (prevents SSR issues)
+  if (!isMounted) {
+    return (
+      <div className="flex justify-center items-center py-8">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
   if (error) {
     return (
       <div className="flex flex-col justify-center items-center py-8 space-y-4 text-center">
@@ -179,7 +231,7 @@ export default function SquarePaymentForm({
         <h3 className="text-lg font-semibold">Payment System Error</h3>
         <p className="text-sm text-muted-foreground max-w-md">{error}</p>
         <Button onClick={handleRetry} className="mt-4">
-          Retry Payment Form
+          Refresh Page
         </Button>
       </div>
     )
@@ -190,9 +242,7 @@ export default function SquarePaymentForm({
       <div className="flex flex-col justify-center items-center py-8 space-y-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <span className="text-sm text-muted-foreground">Loading secure payment form...</span>
-        <p className="text-xs text-muted-foreground text-center max-w-sm">
-          This may take a few moments to load securely
-        </p>
+        <p className="text-xs text-muted-foreground text-center max-w-sm">Initializing Square payment system...</p>
       </div>
     )
   }
@@ -218,8 +268,13 @@ export default function SquarePaymentForm({
           <div
             id="card-container"
             ref={cardContainerRef}
-            className="mt-1 p-3 border rounded-md bg-background min-h-[80px] w-full"
-            style={{ minHeight: "80px" }}
+            className="mt-1 p-4 border-2 border-gray-300 rounded-lg bg-white min-h-[100px] w-full block"
+            style={{
+              minHeight: "100px",
+              display: "block",
+              visibility: "visible",
+              opacity: 1,
+            }}
           />
           <p className="text-xs text-muted-foreground mt-2">
             Your payment information is encrypted and processed securely by Square.
