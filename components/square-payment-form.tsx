@@ -39,89 +39,92 @@ export default function SquarePaymentForm({
   const [payments, setPayments] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null)
+  const [debugInfo, setDebugInfo] = useState<string[]>([])
   const { toast } = useToast()
+
+  const addDebugInfo = (message: string) => {
+    console.log(`[Square Debug] ${message}`)
+    setDebugInfo((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${message}`])
+  }
 
   // Callback ref to capture the container element
   const containerRef = useCallback((node: HTMLDivElement | null) => {
     if (node) {
-      console.log("Container ref set:", node)
+      addDebugInfo("Container ref captured successfully")
       setContainerElement(node)
     }
   }, [])
 
   useEffect(() => {
+    addDebugInfo("Component mounted, starting initialization...")
+
+    // Log environment variables (without exposing sensitive data)
+    addDebugInfo(`App ID exists: ${!!process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID}`)
+    addDebugInfo(`Location ID exists: ${!!process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID}`)
+    addDebugInfo(`API URL: ${process.env.NEXT_PUBLIC_SQUARE_API_URL || "not set"}`)
+
     if (!containerElement) {
-      console.log("Waiting for container element...")
+      addDebugInfo("Waiting for container element...")
       return
     }
 
     const initializeSquare = async () => {
       try {
         setError(null)
-        console.log("Container element available, starting Square initialization...")
+        addDebugInfo("Container element ready, checking Square SDK...")
 
-        // Wait for Square SDK
+        // Check if Square SDK script is loaded
+        const squareScript = document.querySelector('script[src*="square.js"]')
+        addDebugInfo(`Square script element found: ${!!squareScript}`)
+
+        // Wait for Square SDK with more detailed logging
         let sdkRetries = 0
-        while (!window.Square && sdkRetries < 50) {
-          console.log(`Waiting for Square SDK... attempt ${sdkRetries + 1}`)
-          await new Promise((resolve) => setTimeout(resolve, 100))
+        const maxRetries = 100 // Increase max retries
+
+        while (!window.Square && sdkRetries < maxRetries) {
+          addDebugInfo(`SDK check attempt ${sdkRetries + 1}/${maxRetries}`)
+          await new Promise((resolve) => setTimeout(resolve, 200)) // Longer wait
           sdkRetries++
         }
 
         if (!window.Square) {
-          throw new Error("Square SDK failed to load. Please refresh the page.")
+          throw new Error(`Square SDK failed to load after ${maxRetries} attempts. Please refresh the page.`)
         }
 
-        console.log("Square SDK loaded successfully")
+        addDebugInfo("Square SDK loaded successfully!")
 
         const applicationId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID
         const locationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID
 
         if (!applicationId || !locationId) {
-          throw new Error("Payment system configuration error. Please contact support.")
+          throw new Error("Missing Square configuration. Please contact support.")
         }
 
-        console.log("Initializing Square payments with:", { applicationId, locationId })
+        addDebugInfo(`Initializing with App ID: ${applicationId.substring(0, 10)}...`)
+        addDebugInfo(`Location ID: ${locationId.substring(0, 10)}...`)
 
         // Initialize Square Payments
         const paymentsInstance = window.Square.payments(applicationId, locationId)
+        addDebugInfo("Square payments instance created")
         setPayments(paymentsInstance)
 
-        console.log("Creating card instance...")
+        addDebugInfo("Creating card instance...")
 
-        // Create card payment method with options
-        const cardInstance = await paymentsInstance.card({
-          style: {
-            input: {
-              fontSize: "16px",
-              fontFamily: "inherit",
-              color: "#000000",
-            },
-            ".input-container": {
-              borderRadius: "6px",
-              borderWidth: "1px",
-              borderStyle: "solid",
-              borderColor: "#d1d5db",
-              backgroundColor: "#ffffff",
-            },
-            ".input-container.is-focus": {
-              borderColor: "#3b82f6",
-            },
-            ".input-container.is-error": {
-              borderColor: "#ef4444",
-            },
-          },
-        })
+        // Create card payment method with simpler options first
+        const cardInstance = await paymentsInstance.card()
+        addDebugInfo("Card instance created successfully")
 
-        console.log("Attaching card to container element...")
+        addDebugInfo("Attaching card to container...")
 
         // Attach directly to the container element
         await cardInstance.attach(containerElement)
-        setCard(cardInstance)
+        addDebugInfo("Card attached to container successfully!")
 
-        console.log("Square payment form initialized successfully!")
+        setCard(cardInstance)
         setIsLoading(false)
+        addDebugInfo("Square payment form fully initialized!")
       } catch (error: any) {
+        addDebugInfo(`Initialization error: ${error.message}`)
         console.error("Square initialization error:", error)
         setError(error.message)
         setIsLoading(false)
@@ -129,8 +132,9 @@ export default function SquarePaymentForm({
       }
     }
 
-    // Small delay to ensure DOM is ready
-    const timer = setTimeout(initializeSquare, 500)
+    // Longer delay to ensure everything is ready
+    addDebugInfo("Starting initialization in 1 second...")
+    const timer = setTimeout(initializeSquare, 1000)
     return () => clearTimeout(timer)
   }, [containerElement, onPaymentError])
 
@@ -147,15 +151,16 @@ export default function SquarePaymentForm({
     }
 
     setIsProcessing(true)
+    addDebugInfo("Starting payment process...")
 
     try {
-      console.log("Starting payment tokenization...")
+      addDebugInfo("Tokenizing card...")
 
       // Tokenize the card
       const tokenResult = await card.tokenize()
 
       if (tokenResult.status === "OK") {
-        console.log("Card tokenized successfully, processing payment...")
+        addDebugInfo("Card tokenized successfully, processing payment...")
 
         // Send payment to your server
         const response = await fetch("/api/square/process-payment", {
@@ -177,7 +182,7 @@ export default function SquarePaymentForm({
         const result = await response.json()
 
         if (result.success) {
-          console.log("Payment processed successfully!")
+          addDebugInfo("Payment processed successfully!")
           toast({
             title: "Payment successful!",
             description: "Your order has been processed.",
@@ -191,6 +196,7 @@ export default function SquarePaymentForm({
         throw new Error(errorMessage)
       }
     } catch (error: any) {
+      addDebugInfo(`Payment error: ${error.message}`)
       console.error("Payment error:", error)
       toast({
         title: "Payment failed",
@@ -204,6 +210,10 @@ export default function SquarePaymentForm({
   }
 
   const handleRetry = () => {
+    addDebugInfo("Retrying initialization...")
+    setError(null)
+    setIsLoading(true)
+    setDebugInfo([])
     window.location.reload()
   }
 
@@ -222,8 +232,19 @@ export default function SquarePaymentForm({
         </div>
         <h3 className="text-lg font-semibold">Payment System Error</h3>
         <p className="text-sm text-muted-foreground max-w-md">{error}</p>
+
+        {/* Debug information */}
+        <details className="mt-4 text-left">
+          <summary className="cursor-pointer text-sm font-medium">Debug Information</summary>
+          <div className="mt-2 p-3 bg-gray-100 rounded text-xs font-mono max-h-40 overflow-y-auto">
+            {debugInfo.map((info, index) => (
+              <div key={index}>{info}</div>
+            ))}
+          </div>
+        </details>
+
         <Button onClick={handleRetry} className="mt-4">
-          Refresh Page
+          Retry Payment Setup
         </Button>
       </div>
     )
@@ -234,9 +255,21 @@ export default function SquarePaymentForm({
       <div className="flex flex-col justify-center items-center py-8 space-y-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <span className="text-sm text-muted-foreground">Loading secure payment form...</span>
-        <p className="text-xs text-muted-foreground text-center max-w-sm">
-          {!containerElement ? "Preparing container..." : "Initializing Square payment system..."}
-        </p>
+
+        {/* Show debug info while loading */}
+        <details className="mt-4 text-left">
+          <summary className="cursor-pointer text-sm font-medium">Loading Details</summary>
+          <div className="mt-2 p-3 bg-gray-100 rounded text-xs font-mono max-h-40 overflow-y-auto">
+            {debugInfo.map((info, index) => (
+              <div key={index}>{info}</div>
+            ))}
+          </div>
+        </details>
+
+        {/* Force retry button after 30 seconds */}
+        <Button onClick={handleRetry} variant="outline" size="sm" className="mt-4 bg-transparent">
+          Force Retry
+        </Button>
       </div>
     )
   }
