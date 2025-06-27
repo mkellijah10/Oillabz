@@ -1,33 +1,26 @@
 import { NextResponse } from "next/server"
-import { Client, Environment } from "@square/square"
 import { randomUUID } from "crypto"
 
-const client = new Client({
-  accessToken: process.env.squareaccesstoken1!,
-  environment: Environment.Production, // ← use enum
-})
-
 export async function POST(request: Request) {
-  try {
-    const { cartItems, customerDetails, total } = await request.json()
+  const { Client, Environment } = await import("square") // ← dynamic import
+  const client = new Client({
+    accessToken: process.env.squareaccesstoken1!,
+    environment: Environment.Production,
+  })
 
+  try {
+    const { cartItems, customerDetails } = await request.json()
     const { ordersApi } = client
 
-    // Create line items for Square order
-    const lineItems = cartItems.map((item: any) => ({
-      name: item.name,
-      quantity: item.quantity.toString(),
-      basePriceMoney: {
-        amount: BigInt(Math.round(item.price * 100)), // Convert to cents
-        currency: "USD",
-      },
-    }))
-
-    // Create order in Square
-    const orderRequest = {
+    const order = await ordersApi.createOrder({
+      idempotencyKey: randomUUID(),
       order: {
-        locationId: process.env.sqaurelocationid1, // updated env var name
-        lineItems,
+        locationId: process.env.sqaurelocationid1,
+        lineItems: cartItems.map((i: any) => ({
+          name: i.name,
+          quantity: `${i.quantity}`,
+          basePriceMoney: { amount: BigInt(Math.round(i.price * 100)), currency: "USD" },
+        })),
         fulfillments: [
           {
             type: "PICKUP",
@@ -37,32 +30,15 @@ export async function POST(request: Request) {
                 displayName: customerDetails.name,
                 emailAddress: customerDetails.email,
               },
-              note: `Order from OilLabzZ website`,
             },
           },
         ],
       },
-      idempotencyKey: randomUUID(),
-    }
+    })
 
-    const response = await ordersApi.createOrder(orderRequest)
-
-    if (response.result.order) {
-      return NextResponse.json({
-        success: true,
-        order: response.result.order,
-      })
-    } else {
-      throw new Error("Order creation failed")
-    }
+    return NextResponse.json({ success: true, order: order.result.order })
   } catch (error: any) {
-    console.error("Square order creation error:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || "Failed to create order in Square",
-      },
-      { status: 500 },
-    )
+    console.error("Square order error:", error)
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 })
   }
 }
