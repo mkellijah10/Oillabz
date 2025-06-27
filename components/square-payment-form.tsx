@@ -41,6 +41,7 @@ export default function SquarePaymentForm({
   const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null)
   const [debugInfo, setDebugInfo] = useState<string[]>([])
   const { toast } = useToast()
+  const [containerReady, setContainerReady] = useState(false)
 
   const addDebugInfo = (message: string) => {
     console.log(`[Square Debug] ${message}`)
@@ -52,6 +53,7 @@ export default function SquarePaymentForm({
     if (node) {
       addDebugInfo("Container ref captured successfully")
       setContainerElement(node)
+      setContainerReady(true) // Add this line
     }
   }, [])
 
@@ -63,7 +65,7 @@ export default function SquarePaymentForm({
     addDebugInfo(`Location ID exists: ${!!process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID}`)
     addDebugInfo(`API URL: ${process.env.NEXT_PUBLIC_SQUARE_API_URL || "not set"}`)
 
-    if (!containerElement) {
+    if (!containerReady || !containerElement) {
       addDebugInfo("Waiting for container element...")
       return
     }
@@ -136,7 +138,7 @@ export default function SquarePaymentForm({
     addDebugInfo("Starting initialization in 1 second...")
     const timer = setTimeout(initializeSquare, 1000)
     return () => clearTimeout(timer)
-  }, [containerElement, onPaymentError])
+  }, [containerReady, containerElement, onPaymentError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
