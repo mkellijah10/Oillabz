@@ -1,32 +1,30 @@
 import { NextResponse } from "next/server";
-import { Client } from "square";
+import { Client, Environment } from "square/dist/client";
 import { randomUUID } from "crypto";
 
 const client = new Client({
-  accessToken: process.env.squareaccesstoken1,     // updated env var name
-  environment: "production",                       // hardcoded production environment
+  accessToken: process.env.squareaccesstoken1,
+  environment: Environment.Production,
 });
 
-export async function POST(request: Request) {
+export async function POST(request) {
   try {
     const { cartItems, customerDetails, total } = await request.json();
 
     const { ordersApi } = client;
 
-    // Create line items for Square order
-    const lineItems = cartItems.map((item: any) => ({
+    const lineItems = cartItems.map((item) => ({
       name: item.name,
       quantity: item.quantity.toString(),
       basePriceMoney: {
-        amount: BigInt(Math.round(item.price * 100)), // Convert to cents
+        amount: BigInt(Math.round(item.price * 100)),
         currency: "USD",
       },
     }));
 
-    // Create order in Square
     const orderRequest = {
       order: {
-        locationId: process.env.sqaurelocationid1,     // updated env var name
+        locationId: process.env.sqaurelocationid1,
         lineItems,
         fulfillments: [
           {
@@ -55,7 +53,7 @@ export async function POST(request: Request) {
     } else {
       throw new Error("Order creation failed");
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error("Square order creation error:", error);
     return NextResponse.json(
       {
