@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -18,6 +18,12 @@ interface SquarePaymentFormProps {
   disabled?: boolean
 }
 
+declare global {
+  interface Window {
+    Square: any
+  }
+}
+
 export default function SquarePaymentForm({
   amount,
   onPaymentSuccess,
@@ -30,47 +36,92 @@ export default function SquarePaymentForm({
   const [isProcessing, setIsProcessing] = useState(false)
   const [card, setCard] = useState<any>(null)
   const [cardholderName, setCardholderName] = useState(customerName || "")
+  const [payments, setPayments] = useState<any>(null)
+  const cardContainerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
 
-  // This is a simplified version without actual Square SDK integration
-  // In a real implementation, you would load the Square Web Payments SDK
-  // and initialize the card element
-
   useEffect(() => {
-    // Simulate loading the Square SDK
-    const timer = setTimeout(() => {
-      setIsLoading(false)
-    }, 1000)
+    const initializeSquare = async () => {
+      try {
+        if (!window.Square) {
+          throw new Error("Square.js failed to load")
+        }
 
+        const applicationId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID
+        const locationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID
+
+        if (!applicationId || !locationId) {
+          throw new Error("Square configuration missing")
+        }
+
+        // Initialize Square Payments
+        const paymentsInstance = window.Square.payments(applicationId, locationId)
+        setPayments(paymentsInstance)
+
+        // Create card payment method
+        const cardInstance = await paymentsInstance.card()
+        await cardInstance.attach("#card-container")
+        setCard(cardInstance)
+
+        setIsLoading(false)
+      } catch (error: any) {
+        console.error("Square initialization error:", error)
+        toast({
+          title: "Payment system error",
+          description: "Unable to load payment form. Please try again or contact support.",
+          variant: "destructive",
+        })
+        onPaymentError(error)
+      }
+    }
+
+    // Wait a bit for Square SDK to load
+    const timer = setTimeout(initializeSquare, 1000)
     return () => clearTimeout(timer)
-  }, [])
+  }, [toast, onPaymentError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (disabled) return
+    if (disabled || !card || !payments) return
 
     setIsProcessing(true)
 
     try {
-      // In a real implementation, you would tokenize the card and process the payment
-      // For this demo, we'll simulate a successful payment
-      await new Promise((resolve) => setTimeout(resolve, 2000))
+      // Tokenize the card
+      const tokenResult = await card.tokenize()
 
-      const paymentResult = {
-        id: `sq_payment_${Date.now()}`,
-        amount,
-        currency: "USD",
-        status: "COMPLETED",
-        receiptUrl: `https://squareup.com/receipt/preview/${Date.now()}`,
-        customer: {
-          name: customerName,
-          email: customerEmail,
-        },
+      if (tokenResult.status === "OK") {
+        // Send payment to your server
+        const response = await fetch("/api/square/process-payment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sourceId: tokenResult.token,
+            amount: Math.round(amount * 100), // Convert to cents
+            currency: "USD",
+            customerDetails: {
+              name: cardholderName,
+              email: customerEmail,
+            },
+          }),
+        })
+
+        const result = await response.json()
+
+        if (result.success) {
+          onPaymentSuccess(result.payment)
+        } else {
+          throw new Error(result.error || "Payment failed")
+        }
+      } else {
+        const errorMessage = tokenResult.errors?.[0]?.detail || "Card validation failed"
+        throw new Error(errorMessage)
       }
-
-      onPaymentSuccess(paymentResult)
     } catch (error: any) {
+      console.error("Payment error:", error)
       toast({
         title: "Payment failed",
         description: error.message || "There was an error processing your payment. Please try again.",
@@ -86,6 +137,7 @@ export default function SquarePaymentForm({
     return (
       <div className="flex justify-center items-center py-8">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2">Loading payment form...</span>
       </div>
     )
   }
@@ -106,33 +158,19 @@ export default function SquarePaymentForm({
 
       <div>
         <Label>Card Information</Label>
-        <div className="mt-1 p-3 border rounded-md bg-background">
-          {/* In a real implementation, this would be the Square card element */}
-          <div className="grid grid-cols-1 gap-4">
-            <div>
-              <Label htmlFor="cardNumber">Card Number</Label>
-              <Input id="cardNumber" placeholder="1234 5678 9012 3456" required disabled={isProcessing || disabled} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="expDate">Expiration Date</Label>
-                <Input id="expDate" placeholder="MM/YY" required disabled={isProcessing || disabled} />
-              </div>
-              <div>
-                <Label htmlFor="cvv">CVV</Label>
-                <Input id="cvv" placeholder="123" required disabled={isProcessing || disabled} />
-              </div>
-            </div>
-          </div>
-        </div>
+        <div
+          id="card-container"
+          ref={cardContainerRef}
+          className="mt-1 p-3 border rounded-md bg-background min-h-[60px]"
+        />
         <p className="text-xs text-muted-foreground mt-2">Your payment information is processed securely by Square.</p>
       </div>
 
-      <Button type="submit" className="w-full" disabled={isProcessing || disabled}>
+      <Button type="submit" className="w-full" disabled={isProcessing || disabled || !card}>
         {isProcessing ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Processing...
+            Processing Payment...
           </>
         ) : (
           `Pay $${amount.toFixed(2)}`
@@ -140,7 +178,12 @@ export default function SquarePaymentForm({
       </Button>
 
       <div className="flex items-center justify-center mt-4">
-        <img src="/images/square-secure-payments.png" alt="Secured by Square Payments" className="h-6" />
+        <div className="flex items-center space-x-2 text-xs text-muted-foreground">
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" />
+          </svg>
+          <span>Secured by Square</span>
+        </div>
       </div>
     </form>
   )

@@ -1,30 +1,85 @@
 import { NextResponse } from "next/server"
+import { Client, Environment } from "squareup"
+import { randomUUID } from "crypto"
+
+// Initialize Square client
+const client = new Client({
+  accessToken: process.env.SQUARE_ACCESS_TOKEN,
+  environment: process.env.SQUARE_ENVIRONMENT === "production" ? Environment.Production : Environment.Sandbox,
+})
 
 export async function POST(request: Request) {
   try {
     const { sourceId, amount, currency, customerDetails } = await request.json()
 
-    // In a real implementation, you would use the Square SDK to process the payment
-    // This is a simplified example that simulates a successful payment
+    if (!process.env.SQUARE_ACCESS_TOKEN) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Square access token not configured",
+        },
+        { status: 500 },
+      )
+    }
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    const { paymentsApi } = client
 
-    // For demonstration purposes, we'll return a successful response
-    // In a real implementation, you would call Square's API to process the payment
-    return NextResponse.json({
-      success: true,
-      payment: {
-        id: `sq_payment_${Date.now()}`,
-        amount,
-        currency,
-        status: "COMPLETED",
-        receiptUrl: `https://squareup.com/receipt/preview/${Date.now()}`,
+    // Create payment request
+    const requestBody = {
+      sourceId,
+      amountMoney: {
+        amount: BigInt(amount), // Amount in cents
+        currency: currency || "USD",
       },
-      customer: customerDetails,
+      idempotencyKey: randomUUID(),
+      locationId: process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID,
+      note: `OilLabzZ Order - ${customerDetails.name}`,
+      buyerEmailAddress: customerDetails.email,
+    }
+
+    console.log("Processing Square payment:", {
+      amount: amount,
+      currency: currency,
+      customer: customerDetails.name,
     })
+
+    // Process the payment
+    const response = await paymentsApi.createPayment(requestBody)
+
+    if (response.result.payment) {
+      const payment = response.result.payment
+
+      return NextResponse.json({
+        success: true,
+        payment: {
+          id: payment.id,
+          amount: Number(payment.amountMoney?.amount || 0) / 100,
+          currency: payment.amountMoney?.currency,
+          status: payment.status,
+          receiptUrl: payment.receiptUrl,
+          createdAt: payment.createdAt,
+        },
+        customer: customerDetails,
+      })
+    } else {
+      throw new Error("Payment creation failed")
+    }
   } catch (error: any) {
     console.error("Square payment processing error:", error)
+
+    // Handle Square API errors
+    if (error.errors) {
+      const squareError = error.errors[0]
+      return NextResponse.json(
+        {
+          success: false,
+          error: squareError.detail || "Payment processing failed",
+          code: squareError.code,
+        },
+        { status: 400 },
+      )
+    }
+
     return NextResponse.json(
       {
         success: false,
