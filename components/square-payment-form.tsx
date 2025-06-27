@@ -43,6 +43,13 @@ export default function SquarePaymentForm({
   useEffect(() => {
     const initializeSquare = async () => {
       try {
+        // Wait for DOM to be ready
+        if (!cardContainerRef.current) {
+          console.log("Card container not ready, retrying...")
+          setTimeout(initializeSquare, 500)
+          return
+        }
+
         if (!window.Square) {
           throw new Error("Square.js failed to load")
         }
@@ -54,29 +61,53 @@ export default function SquarePaymentForm({
           throw new Error("Square configuration missing")
         }
 
+        console.log("Initializing Square with:", { applicationId, locationId })
+
         // Initialize Square Payments
         const paymentsInstance = window.Square.payments(applicationId, locationId)
         setPayments(paymentsInstance)
 
         // Create card payment method
-        const cardInstance = await paymentsInstance.card()
+        const cardInstance = await paymentsInstance.card({
+          style: {
+            input: {
+              fontSize: "16px",
+              fontFamily: "inherit",
+              color: "hsl(var(--foreground))",
+              backgroundColor: "hsl(var(--background))",
+            },
+            ".input-container": {
+              borderColor: "hsl(var(--border))",
+              borderRadius: "6px",
+            },
+            ".input-container.is-focus": {
+              borderColor: "hsl(var(--ring))",
+            },
+            ".input-container.is-error": {
+              borderColor: "hsl(var(--destructive))",
+            },
+          },
+        })
+
+        // Attach to the card container
         await cardInstance.attach("#card-container")
         setCard(cardInstance)
 
+        console.log("Square initialized successfully")
         setIsLoading(false)
       } catch (error: any) {
         console.error("Square initialization error:", error)
         toast({
           title: "Payment system error",
-          description: "Unable to load payment form. Please try again or contact support.",
+          description: "Unable to load payment form. Please refresh the page and try again.",
           variant: "destructive",
         })
         onPaymentError(error)
       }
     }
 
-    // Wait a bit for Square SDK to load
-    const timer = setTimeout(initializeSquare, 1000)
+    // Wait for component to mount and Square SDK to load
+    const timer = setTimeout(initializeSquare, 1500)
     return () => clearTimeout(timer)
   }, [toast, onPaymentError])
 
@@ -161,7 +192,8 @@ export default function SquarePaymentForm({
         <div
           id="card-container"
           ref={cardContainerRef}
-          className="mt-1 p-3 border rounded-md bg-background min-h-[60px]"
+          className="mt-1 p-3 border rounded-md bg-background min-h-[60px] w-full"
+          style={{ minHeight: "60px" }}
         />
         <p className="text-xs text-muted-foreground mt-2">Your payment information is processed securely by Square.</p>
       </div>

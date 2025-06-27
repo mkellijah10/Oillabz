@@ -26,8 +26,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        {/* Use production Square SDK */}
-        <Script src="https://web.squarecdn.com/v1/square.js" strategy="beforeInteractive" />
+        {/* Load Square SDK with better error handling */}
+        <Script
+          src="https://web.squarecdn.com/v1/square.js"
+          strategy="beforeInteractive"
+          onLoad={() => console.log("Square SDK loaded successfully")}
+          onError={() => console.error("Failed to load Square SDK")}
+        />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
           <CartProvider>
             <ReviewsProvider>
