@@ -79,35 +79,8 @@ export default function SquarePaymentForm({
         const paymentsInstance = window.Square.payments(applicationId, locationId)
         setPayments(paymentsInstance)
 
-        // Create card payment method with simple, working styles
-        const cardInstance = await paymentsInstance.card({
-          style: {
-            input: {
-              fontSize: "16px",
-              fontFamily: "system-ui, -apple-system, sans-serif",
-              color: "#000000",
-              backgroundColor: "#ffffff",
-              padding: "12px",
-            },
-            ".input-container": {
-              borderColor: "#d1d5db",
-              borderRadius: "6px",
-              borderWidth: "1px",
-              borderStyle: "solid",
-            },
-            ".input-container.is-focus": {
-              borderColor: "#e91e63",
-              boxShadow: "0 0 0 2px rgba(233, 30, 99, 0.2)",
-            },
-            ".input-container.is-error": {
-              borderColor: "#ef4444",
-            },
-            ".message-text": {
-              color: "#ef4444",
-              fontSize: "14px",
-            },
-          },
-        })
+        // Create card payment method with NO CUSTOM STYLES
+        const cardInstance = await paymentsInstance.card()
 
         // Attach to the card container
         await cardInstance.attach("#card-container")
@@ -226,13 +199,7 @@ export default function SquarePaymentForm({
           <div
             id="card-container"
             ref={cardContainerRef}
-            className="mt-1 border rounded-md bg-white min-h-[60px] w-full"
-            style={{
-              minHeight: "60px",
-              backgroundColor: "#ffffff",
-              border: "1px solid #d1d5db",
-              borderRadius: "6px",
-            }}
+            className="mt-1 p-3 border rounded-md bg-background min-h-[60px] w-full"
           />
           <p className="text-xs text-muted-foreground mt-2">
             Your payment information is encrypted and processed securely by Square.
