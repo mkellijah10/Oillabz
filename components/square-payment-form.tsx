@@ -37,38 +37,31 @@ export default function SquarePaymentForm({
   const [card, setCard] = useState<any>(null)
   const [cardholderName, setCardholderName] = useState(customerName || "")
   const [payments, setPayments] = useState<any>(null)
-  const [loadingMessage, setLoadingMessage] = useState("Loading payment form...")
   const cardContainerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
 
   useEffect(() => {
     let retryCount = 0
-    const maxRetries = 10
+    const maxRetries = 15
 
     const initializeSquare = async () => {
       try {
-        setLoadingMessage("Checking Square SDK...")
-
         // Check if Square SDK is loaded
         if (!window.Square) {
           retryCount++
           if (retryCount < maxRetries) {
-            setLoadingMessage(`Loading Square SDK... (${retryCount}/${maxRetries})`)
-            setTimeout(initializeSquare, 300)
+            setTimeout(initializeSquare, 200)
             return
           } else {
-            throw new Error("Square SDK failed to load after multiple attempts")
+            throw new Error("Square SDK failed to load")
           }
         }
-
-        setLoadingMessage("Preparing payment form...")
 
         // Wait for DOM to be ready
         if (!cardContainerRef.current) {
           retryCount++
           if (retryCount < maxRetries) {
-            setLoadingMessage(`Preparing container... (${retryCount}/${maxRetries})`)
-            setTimeout(initializeSquare, 200)
+            setTimeout(initializeSquare, 100)
             return
           } else {
             throw new Error("Card container not found")
@@ -82,32 +75,36 @@ export default function SquarePaymentForm({
           throw new Error("Square configuration missing")
         }
 
-        setLoadingMessage("Connecting to Square...")
-
         // Initialize Square Payments
         const paymentsInstance = window.Square.payments(applicationId, locationId)
         setPayments(paymentsInstance)
 
-        setLoadingMessage("Setting up card form...")
-
-        // Create card payment method
+        // Create card payment method with simple, working styles
         const cardInstance = await paymentsInstance.card({
           style: {
             input: {
               fontSize: "16px",
-              fontFamily: "inherit",
-              color: "hsl(var(--foreground))",
-              backgroundColor: "hsl(var(--background))",
+              fontFamily: "system-ui, -apple-system, sans-serif",
+              color: "#000000",
+              backgroundColor: "#ffffff",
+              padding: "12px",
             },
             ".input-container": {
-              borderColor: "hsl(var(--border))",
+              borderColor: "#d1d5db",
               borderRadius: "6px",
+              borderWidth: "1px",
+              borderStyle: "solid",
             },
             ".input-container.is-focus": {
-              borderColor: "hsl(var(--ring))",
+              borderColor: "#e91e63",
+              boxShadow: "0 0 0 2px rgba(233, 30, 99, 0.2)",
             },
             ".input-container.is-error": {
-              borderColor: "hsl(var(--destructive))",
+              borderColor: "#ef4444",
+            },
+            ".message-text": {
+              color: "#ef4444",
+              fontSize: "14px",
             },
           },
         })
@@ -131,13 +128,21 @@ export default function SquarePaymentForm({
     }
 
     // Start initialization immediately
-    initializeSquare()
+    const timer = setTimeout(initializeSquare, 100)
+    return () => clearTimeout(timer)
   }, [toast, onPaymentError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (disabled || !card || !payments) return
+    if (disabled || !card || !payments || !cardholderName.trim()) {
+      toast({
+        title: "Missing information",
+        description: "Please fill in all required fields.",
+        variant: "destructive",
+      })
+      return
+    }
 
     setIsProcessing(true)
 
@@ -166,6 +171,10 @@ export default function SquarePaymentForm({
         const result = await response.json()
 
         if (result.success) {
+          toast({
+            title: "Payment successful!",
+            description: "Your order has been processed.",
+          })
           onPaymentSuccess(result.payment)
         } else {
           throw new Error(result.error || "Payment failed")
@@ -191,51 +200,63 @@ export default function SquarePaymentForm({
     return (
       <div className="flex flex-col justify-center items-center py-8 space-y-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="text-sm text-muted-foreground">{loadingMessage}</span>
-        <div className="text-xs text-muted-foreground text-center max-w-sm">
-          If this takes more than 30 seconds, please refresh the page
-        </div>
+        <span className="text-sm text-muted-foreground">Loading secure payment form...</span>
       </div>
     )
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <Label htmlFor="cardholderName">Name on Card</Label>
-        <Input
-          id="cardholderName"
-          value={cardholderName}
-          onChange={(e) => setCardholderName(e.target.value)}
-          placeholder="Cardholder Name"
-          required
-          disabled={isProcessing || disabled}
-        />
-      </div>
+    <div className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <Label htmlFor="cardholderName">Name on Card *</Label>
+          <Input
+            id="cardholderName"
+            value={cardholderName}
+            onChange={(e) => setCardholderName(e.target.value)}
+            placeholder="Enter cardholder name"
+            required
+            disabled={isProcessing || disabled}
+            className="mt-1"
+          />
+        </div>
 
-      <div>
-        <Label>Card Information</Label>
-        <div
-          id="card-container"
-          ref={cardContainerRef}
-          className="mt-1 p-3 border rounded-md bg-background min-h-[60px] w-full"
-          style={{ minHeight: "60px" }}
-        />
-        <p className="text-xs text-muted-foreground mt-2">Your payment information is processed securely by Square.</p>
-      </div>
+        <div>
+          <Label>Card Information *</Label>
+          <div
+            id="card-container"
+            ref={cardContainerRef}
+            className="mt-1 border rounded-md bg-white min-h-[60px] w-full"
+            style={{
+              minHeight: "60px",
+              backgroundColor: "#ffffff",
+              border: "1px solid #d1d5db",
+              borderRadius: "6px",
+            }}
+          />
+          <p className="text-xs text-muted-foreground mt-2">
+            Your payment information is encrypted and processed securely by Square.
+          </p>
+        </div>
 
-      <Button type="submit" className="w-full" disabled={isProcessing || disabled || !card}>
-        {isProcessing ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Processing Payment...
-          </>
-        ) : (
-          `Pay $${amount.toFixed(2)}`
-        )}
-      </Button>
+        <Button
+          type="submit"
+          className="w-full"
+          size="lg"
+          disabled={isProcessing || disabled || !card || !cardholderName.trim()}
+        >
+          {isProcessing ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Processing Payment...
+            </>
+          ) : (
+            `Pay $${amount.toFixed(2)}`
+          )}
+        </Button>
+      </form>
 
-      <div className="flex items-center justify-center mt-4">
+      <div className="flex items-center justify-center">
         <div className="flex items-center space-x-2 text-xs text-muted-foreground">
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
             <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" />
@@ -243,6 +264,10 @@ export default function SquarePaymentForm({
           <span>Secured by Square</span>
         </div>
       </div>
-    </form>
+
+      <div className="text-center">
+        <p className="text-xs text-muted-foreground">We accept all major credit and debit cards</p>
+      </div>
+    </div>
   )
 }
