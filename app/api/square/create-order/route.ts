@@ -1,17 +1,17 @@
-import { NextResponse } from "next/server"
-import { Client, Environment } from "squareup"
-import { randomUUID } from "crypto"
+import { NextResponse } from "next/server";
+import { Client, Environment } from "square";
+import { randomUUID } from "crypto";
 
 const client = new Client({
-  accessToken: process.env.SQUARE_ACCESS_TOKEN,
-  environment: process.env.SQUARE_ENVIRONMENT === "production" ? Environment.Production : Environment.Sandbox,
-})
+  accessToken: process.env.squareaccesstoken1,         // updated env var name
+  environment: Environment.Production,                  // hardcoded production environment
+});
 
 export async function POST(request: Request) {
   try {
-    const { cartItems, customerDetails, total } = await request.json()
+    const { cartItems, customerDetails, total } = await request.json();
 
-    const { ordersApi } = client
+    const { ordersApi } = client;
 
     // Create line items for Square order
     const lineItems = cartItems.map((item: any) => ({
@@ -21,12 +21,12 @@ export async function POST(request: Request) {
         amount: BigInt(Math.round(item.price * 100)), // Convert to cents
         currency: "USD",
       },
-    }))
+    }));
 
     // Create order in Square
     const orderRequest = {
       order: {
-        locationId: process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID,
+        locationId: process.env.sqaurelocationid1,     // updated env var name
         lineItems,
         fulfillments: [
           {
@@ -43,26 +43,26 @@ export async function POST(request: Request) {
         ],
       },
       idempotencyKey: randomUUID(),
-    }
+    };
 
-    const response = await ordersApi.createOrder(orderRequest)
+    const response = await ordersApi.createOrder(orderRequest);
 
     if (response.result.order) {
       return NextResponse.json({
         success: true,
         order: response.result.order,
-      })
+      });
     } else {
-      throw new Error("Order creation failed")
+      throw new Error("Order creation failed");
     }
   } catch (error: any) {
-    console.error("Square order creation error:", error)
+    console.error("Square order creation error:", error);
     return NextResponse.json(
       {
         success: false,
         error: error.message || "Failed to create order in Square",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
