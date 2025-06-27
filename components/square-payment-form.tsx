@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -38,24 +38,14 @@ export default function SquarePaymentForm({
   const [cardholderName, setCardholderName] = useState(customerName || "")
   const [payments, setPayments] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
-  const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null)
   const [debugInfo, setDebugInfo] = useState<string[]>([])
+  const containerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
-  const [containerReady, setContainerReady] = useState(false)
 
   const addDebugInfo = (message: string) => {
     console.log(`[Square Debug] ${message}`)
     setDebugInfo((prev) => [...prev, `${new Date().toLocaleTimeString()}: ${message}`])
   }
-
-  // Callback ref to capture the container element
-  const containerRef = useCallback((node: HTMLDivElement | null) => {
-    if (node) {
-      addDebugInfo("Container ref captured successfully")
-      setContainerElement(node)
-      setContainerReady(true) // Add this line
-    }
-  }, [])
 
   useEffect(() => {
     addDebugInfo("Component mounted, starting initialization...")
@@ -65,15 +55,18 @@ export default function SquarePaymentForm({
     addDebugInfo(`Location ID exists: ${!!process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID}`)
     addDebugInfo(`API URL: ${process.env.NEXT_PUBLIC_SQUARE_API_URL || "not set"}`)
 
-    if (!containerReady || !containerElement) {
-      addDebugInfo("Waiting for container element...")
-      return
-    }
-
     const initializeSquare = async () => {
       try {
         setError(null)
-        addDebugInfo("Container element ready, checking Square SDK...")
+
+        // Check container element
+        if (!containerRef.current) {
+          addDebugInfo("Container ref is null, waiting...")
+          setTimeout(initializeSquare, 500)
+          return
+        }
+
+        addDebugInfo("Container element found, checking Square SDK...")
 
         // Check if Square SDK script is loaded
         const squareScript = document.querySelector('script[src*="square.js"]')
@@ -81,11 +74,11 @@ export default function SquarePaymentForm({
 
         // Wait for Square SDK with more detailed logging
         let sdkRetries = 0
-        const maxRetries = 100 // Increase max retries
+        const maxRetries = 100
 
         while (!window.Square && sdkRetries < maxRetries) {
           addDebugInfo(`SDK check attempt ${sdkRetries + 1}/${maxRetries}`)
-          await new Promise((resolve) => setTimeout(resolve, 200)) // Longer wait
+          await new Promise((resolve) => setTimeout(resolve, 200))
           sdkRetries++
         }
 
@@ -112,14 +105,14 @@ export default function SquarePaymentForm({
 
         addDebugInfo("Creating card instance...")
 
-        // Create card payment method with simpler options first
+        // Create card payment method
         const cardInstance = await paymentsInstance.card()
         addDebugInfo("Card instance created successfully")
 
         addDebugInfo("Attaching card to container...")
 
-        // Attach directly to the container element
-        await cardInstance.attach(containerElement)
+        // Attach to the container element
+        await cardInstance.attach(containerRef.current)
         addDebugInfo("Card attached to container successfully!")
 
         setCard(cardInstance)
@@ -134,11 +127,11 @@ export default function SquarePaymentForm({
       }
     }
 
-    // Longer delay to ensure everything is ready
+    // Start initialization after a short delay
     addDebugInfo("Starting initialization in 1 second...")
     const timer = setTimeout(initializeSquare, 1000)
     return () => clearTimeout(timer)
-  }, [containerReady, containerElement, onPaymentError])
+  }, [onPaymentError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -268,7 +261,7 @@ export default function SquarePaymentForm({
           </div>
         </details>
 
-        {/* Force retry button after 30 seconds */}
+        {/* Force retry button */}
         <Button onClick={handleRetry} variant="outline" size="sm" className="mt-4 bg-transparent">
           Force Retry
         </Button>
