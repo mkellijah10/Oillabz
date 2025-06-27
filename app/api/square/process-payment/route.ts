@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { Client, Environment } from "squareup"
+import { Client, Environment } from "square"
 import { randomUUID } from "crypto"
 
 // Initialize Square client
