@@ -37,73 +37,61 @@ export default function SquarePaymentForm({
   const [card, setCard] = useState<any>(null)
   const [cardholderName, setCardholderName] = useState(customerName || "")
   const [payments, setPayments] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
   const cardContainerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
 
   useEffect(() => {
-    let retryCount = 0
-    const maxRetries = 15
-
     const initializeSquare = async () => {
       try {
+        setError(null)
+
+        // Wait for component to be fully mounted
+        await new Promise((resolve) => setTimeout(resolve, 500))
+
         // Check if Square SDK is loaded
         if (!window.Square) {
-          retryCount++
-          if (retryCount < maxRetries) {
-            setTimeout(initializeSquare, 200)
-            return
-          } else {
-            throw new Error("Square SDK failed to load")
-          }
+          throw new Error("Square SDK not loaded. Please refresh the page.")
         }
 
-        // Wait for DOM to be ready
-        if (!cardContainerRef.current) {
-          retryCount++
-          if (retryCount < maxRetries) {
-            setTimeout(initializeSquare, 100)
-            return
-          } else {
-            throw new Error("Card container not found")
-          }
+        // Check if container exists
+        const container = document.getElementById("card-container")
+        if (!container) {
+          throw new Error("Payment form container not ready. Please refresh the page.")
         }
 
         const applicationId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID
         const locationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID
 
         if (!applicationId || !locationId) {
-          throw new Error("Square configuration missing")
+          throw new Error("Payment system configuration error. Please contact support.")
         }
+
+        console.log("Initializing Square with:", { applicationId, locationId })
 
         // Initialize Square Payments
         const paymentsInstance = window.Square.payments(applicationId, locationId)
         setPayments(paymentsInstance)
 
-        // Create card payment method with NO CUSTOM STYLES
+        // Create card payment method
         const cardInstance = await paymentsInstance.card()
 
         // Attach to the card container
         await cardInstance.attach("#card-container")
         setCard(cardInstance)
 
-        console.log("Square initialized successfully")
+        console.log("Square payment form initialized successfully")
         setIsLoading(false)
       } catch (error: any) {
         console.error("Square initialization error:", error)
+        setError(error.message)
         setIsLoading(false)
-        toast({
-          title: "Payment system error",
-          description: "Unable to load payment form. Please refresh the page and try again.",
-          variant: "destructive",
-        })
         onPaymentError(error)
       }
     }
 
-    // Start initialization immediately
-    const timer = setTimeout(initializeSquare, 100)
-    return () => clearTimeout(timer)
-  }, [toast, onPaymentError])
+    initializeSquare()
+  }, [onPaymentError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -169,11 +157,42 @@ export default function SquarePaymentForm({
     }
   }
 
+  const handleRetry = () => {
+    setIsLoading(true)
+    setError(null)
+    window.location.reload()
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col justify-center items-center py-8 space-y-4 text-center">
+        <div className="text-red-500 mb-4">
+          <svg className="h-12 w-12 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z"
+            />
+          </svg>
+        </div>
+        <h3 className="text-lg font-semibold">Payment System Error</h3>
+        <p className="text-sm text-muted-foreground max-w-md">{error}</p>
+        <Button onClick={handleRetry} className="mt-4">
+          Retry Payment Form
+        </Button>
+      </div>
+    )
+  }
+
   if (isLoading) {
     return (
       <div className="flex flex-col justify-center items-center py-8 space-y-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <span className="text-sm text-muted-foreground">Loading secure payment form...</span>
+        <p className="text-xs text-muted-foreground text-center max-w-sm">
+          This may take a few moments to load securely
+        </p>
       </div>
     )
   }
@@ -199,7 +218,8 @@ export default function SquarePaymentForm({
           <div
             id="card-container"
             ref={cardContainerRef}
-            className="mt-1 p-3 border rounded-md bg-background min-h-[60px] w-full"
+            className="mt-1 p-3 border rounded-md bg-background min-h-[80px] w-full"
+            style={{ minHeight: "80px" }}
           />
           <p className="text-xs text-muted-foreground mt-2">
             Your payment information is encrypted and processed securely by Square.
