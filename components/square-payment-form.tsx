@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
@@ -38,66 +38,41 @@ export default function SquarePaymentForm({
   const [cardholderName, setCardholderName] = useState(customerName || "")
   const [payments, setPayments] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
-  const [isMounted, setIsMounted] = useState(false)
-  const cardContainerRef = useRef<HTMLDivElement>(null)
+  const [containerElement, setContainerElement] = useState<HTMLDivElement | null>(null)
   const { toast } = useToast()
 
-  // Ensure component is mounted
-  useEffect(() => {
-    setIsMounted(true)
+  // Callback ref to capture the container element
+  const containerRef = useCallback((node: HTMLDivElement | null) => {
+    if (node) {
+      console.log("Container ref set:", node)
+      setContainerElement(node)
+    }
   }, [])
 
   useEffect(() => {
-    if (!isMounted) return
-
-    let retryCount = 0
-    const maxRetries = 20
-
-    const waitForContainer = (): Promise<HTMLElement> => {
-      return new Promise((resolve, reject) => {
-        const checkContainer = () => {
-          const container = cardContainerRef.current || document.getElementById("card-container")
-
-          if (container && container.offsetParent !== null) {
-            // Container exists and is visible
-            resolve(container as HTMLElement)
-          } else if (retryCount < maxRetries) {
-            retryCount++
-            console.log(`Waiting for container... attempt ${retryCount}/${maxRetries}`)
-            setTimeout(checkContainer, 200)
-          } else {
-            reject(new Error("Container not found after maximum retries"))
-          }
-        }
-
-        checkContainer()
-      })
+    if (!containerElement) {
+      console.log("Waiting for container element...")
+      return
     }
 
     const initializeSquare = async () => {
       try {
         setError(null)
-        console.log("Starting Square initialization...")
+        console.log("Container element available, starting Square initialization...")
 
         // Wait for Square SDK
-        if (!window.Square) {
-          let sdkRetries = 0
-          while (!window.Square && sdkRetries < 30) {
-            await new Promise((resolve) => setTimeout(resolve, 200))
-            sdkRetries++
-          }
-
-          if (!window.Square) {
-            throw new Error("Square SDK failed to load. Please refresh the page.")
-          }
+        let sdkRetries = 0
+        while (!window.Square && sdkRetries < 50) {
+          console.log(`Waiting for Square SDK... attempt ${sdkRetries + 1}`)
+          await new Promise((resolve) => setTimeout(resolve, 100))
+          sdkRetries++
         }
 
-        console.log("Square SDK loaded, waiting for container...")
+        if (!window.Square) {
+          throw new Error("Square SDK failed to load. Please refresh the page.")
+        }
 
-        // Wait for container to be ready
-        await waitForContainer()
-
-        console.log("Container ready, initializing payments...")
+        console.log("Square SDK loaded successfully")
 
         const applicationId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID
         const locationId = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID
@@ -106,19 +81,42 @@ export default function SquarePaymentForm({
           throw new Error("Payment system configuration error. Please contact support.")
         }
 
+        console.log("Initializing Square payments with:", { applicationId, locationId })
+
         // Initialize Square Payments
         const paymentsInstance = window.Square.payments(applicationId, locationId)
         setPayments(paymentsInstance)
 
         console.log("Creating card instance...")
 
-        // Create card payment method
-        const cardInstance = await paymentsInstance.card()
+        // Create card payment method with options
+        const cardInstance = await paymentsInstance.card({
+          style: {
+            input: {
+              fontSize: "16px",
+              fontFamily: "inherit",
+              color: "#000000",
+            },
+            ".input-container": {
+              borderRadius: "6px",
+              borderWidth: "1px",
+              borderStyle: "solid",
+              borderColor: "#d1d5db",
+              backgroundColor: "#ffffff",
+            },
+            ".input-container.is-focus": {
+              borderColor: "#3b82f6",
+            },
+            ".input-container.is-error": {
+              borderColor: "#ef4444",
+            },
+          },
+        })
 
-        console.log("Attaching card to container...")
+        console.log("Attaching card to container element...")
 
-        // Attach to the card container
-        await cardInstance.attach("#card-container")
+        // Attach directly to the container element
+        await cardInstance.attach(containerElement)
         setCard(cardInstance)
 
         console.log("Square payment form initialized successfully!")
@@ -131,10 +129,10 @@ export default function SquarePaymentForm({
       }
     }
 
-    // Start initialization after a short delay
-    const timer = setTimeout(initializeSquare, 100)
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(initializeSquare, 500)
     return () => clearTimeout(timer)
-  }, [isMounted, onPaymentError])
+  }, [containerElement, onPaymentError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -151,10 +149,14 @@ export default function SquarePaymentForm({
     setIsProcessing(true)
 
     try {
+      console.log("Starting payment tokenization...")
+
       // Tokenize the card
       const tokenResult = await card.tokenize()
 
       if (tokenResult.status === "OK") {
+        console.log("Card tokenized successfully, processing payment...")
+
         // Send payment to your server
         const response = await fetch("/api/square/process-payment", {
           method: "POST",
@@ -175,6 +177,7 @@ export default function SquarePaymentForm({
         const result = await response.json()
 
         if (result.success) {
+          console.log("Payment processed successfully!")
           toast({
             title: "Payment successful!",
             description: "Your order has been processed.",
@@ -201,18 +204,7 @@ export default function SquarePaymentForm({
   }
 
   const handleRetry = () => {
-    setIsLoading(true)
-    setError(null)
     window.location.reload()
-  }
-
-  // Don't render until mounted (prevents SSR issues)
-  if (!isMounted) {
-    return (
-      <div className="flex justify-center items-center py-8">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
   }
 
   if (error) {
@@ -242,7 +234,9 @@ export default function SquarePaymentForm({
       <div className="flex flex-col justify-center items-center py-8 space-y-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
         <span className="text-sm text-muted-foreground">Loading secure payment form...</span>
-        <p className="text-xs text-muted-foreground text-center max-w-sm">Initializing Square payment system...</p>
+        <p className="text-xs text-muted-foreground text-center max-w-sm">
+          {!containerElement ? "Preparing container..." : "Initializing Square payment system..."}
+        </p>
       </div>
     )
   }
@@ -266,14 +260,13 @@ export default function SquarePaymentForm({
         <div>
           <Label>Card Information *</Label>
           <div
-            id="card-container"
-            ref={cardContainerRef}
-            className="mt-1 p-4 border-2 border-gray-300 rounded-lg bg-white min-h-[100px] w-full block"
+            ref={containerRef}
+            className="mt-1 p-4 border-2 border-gray-300 rounded-lg bg-white min-h-[120px] w-full"
             style={{
-              minHeight: "100px",
+              minHeight: "120px",
+              width: "100%",
               display: "block",
-              visibility: "visible",
-              opacity: 1,
+              position: "relative",
             }}
           />
           <p className="text-xs text-muted-foreground mt-2">
