@@ -37,21 +37,42 @@ export default function SquarePaymentForm({
   const [card, setCard] = useState<any>(null)
   const [cardholderName, setCardholderName] = useState(customerName || "")
   const [payments, setPayments] = useState<any>(null)
+  const [loadingMessage, setLoadingMessage] = useState("Loading payment form...")
   const cardContainerRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
 
   useEffect(() => {
+    let retryCount = 0
+    const maxRetries = 10
+
     const initializeSquare = async () => {
       try {
-        // Wait for DOM to be ready
-        if (!cardContainerRef.current) {
-          console.log("Card container not ready, retrying...")
-          setTimeout(initializeSquare, 500)
-          return
+        setLoadingMessage("Checking Square SDK...")
+
+        // Check if Square SDK is loaded
+        if (!window.Square) {
+          retryCount++
+          if (retryCount < maxRetries) {
+            setLoadingMessage(`Loading Square SDK... (${retryCount}/${maxRetries})`)
+            setTimeout(initializeSquare, 300)
+            return
+          } else {
+            throw new Error("Square SDK failed to load after multiple attempts")
+          }
         }
 
-        if (!window.Square) {
-          throw new Error("Square.js failed to load")
+        setLoadingMessage("Preparing payment form...")
+
+        // Wait for DOM to be ready
+        if (!cardContainerRef.current) {
+          retryCount++
+          if (retryCount < maxRetries) {
+            setLoadingMessage(`Preparing container... (${retryCount}/${maxRetries})`)
+            setTimeout(initializeSquare, 200)
+            return
+          } else {
+            throw new Error("Card container not found")
+          }
         }
 
         const applicationId = process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID
@@ -61,11 +82,13 @@ export default function SquarePaymentForm({
           throw new Error("Square configuration missing")
         }
 
-        console.log("Initializing Square with:", { applicationId, locationId })
+        setLoadingMessage("Connecting to Square...")
 
         // Initialize Square Payments
         const paymentsInstance = window.Square.payments(applicationId, locationId)
         setPayments(paymentsInstance)
+
+        setLoadingMessage("Setting up card form...")
 
         // Create card payment method
         const cardInstance = await paymentsInstance.card({
@@ -97,6 +120,7 @@ export default function SquarePaymentForm({
         setIsLoading(false)
       } catch (error: any) {
         console.error("Square initialization error:", error)
+        setIsLoading(false)
         toast({
           title: "Payment system error",
           description: "Unable to load payment form. Please refresh the page and try again.",
@@ -106,9 +130,8 @@ export default function SquarePaymentForm({
       }
     }
 
-    // Wait for component to mount and Square SDK to load
-    const timer = setTimeout(initializeSquare, 1500)
-    return () => clearTimeout(timer)
+    // Start initialization immediately
+    initializeSquare()
   }, [toast, onPaymentError])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -166,9 +189,12 @@ export default function SquarePaymentForm({
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center py-8">
+      <div className="flex flex-col justify-center items-center py-8 space-y-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <span className="ml-2">Loading payment form...</span>
+        <span className="text-sm text-muted-foreground">{loadingMessage}</span>
+        <div className="text-xs text-muted-foreground text-center max-w-sm">
+          If this takes more than 30 seconds, please refresh the page
+        </div>
       </div>
     )
   }
