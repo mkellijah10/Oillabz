@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { Client, Environment } from "square";
+import { Client } from "square";
 import { randomUUID } from "crypto";
 
 const client = new Client({
-  accessToken: process.env.squareaccesstoken1,         // updated env var name
-  environment: Environment.Production,                  // hardcoded production environment
+  accessToken: process.env.squareaccesstoken1,     // updated env var name
+  environment: "production",                       // hardcoded production environment
 });
 
 export async function POST(request: Request) {
