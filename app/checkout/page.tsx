@@ -181,6 +181,36 @@ export default function CheckoutPage() {
       // Don't fail the order if email fails
     }
 
+    // Create order in Square after successful payment
+    try {
+      const orderResponse = await fetch("/api/square/create-order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          cartItems: cartProducts.map((item) => ({
+            name: item?.name,
+            quantity: item?.quantity,
+            price: item?.price,
+          })),
+          customerDetails: {
+            name: formData.fullName,
+            email: email,
+          },
+          total: total,
+        }),
+      })
+
+      const orderResult = await orderResponse.json()
+      if (orderResult.success) {
+        console.log("Order created in Square:", orderResult.order.id)
+      }
+    } catch (error) {
+      console.error("Failed to create order in Square:", error)
+      // Don't fail the checkout if order creation fails
+    }
+
     setOrderComplete(true)
 
     // Clear cart
@@ -452,7 +482,7 @@ export default function CheckoutPage() {
                 />
               </div>
 
-              <Button variant="outline" onClick={handleBackToShipping} className="w-full">
+              <Button variant="outline" onClick={handleBackToShipping} className="w-full bg-transparent">
                 Back to Shipping
               </Button>
             </div>
