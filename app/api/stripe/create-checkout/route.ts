@@ -33,8 +33,11 @@ export async function POST(request: Request) {
       }
     })
 
-    // Add shipping if applicable
-    if (deliveryMethod === "shipping" && amount < 50) {
+    // Calculate subtotal from cart items only
+    const subtotal = cartItems.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0)
+
+    // Add shipping if applicable (based on subtotal, not total amount)
+    if (deliveryMethod === "shipping" && subtotal < 50) {
       lineItems.push({
         price_data: {
           currency: "usd",
