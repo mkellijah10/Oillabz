@@ -11,11 +11,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Loader2, ArrowLeft, CheckCircle, MapPin } from "lucide-react"
+import { Loader2, ArrowLeft, MapPin } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { products } from "@/lib/products"
 import { useCart } from "@/lib/cart-context"
-import SquarePaymentForm from "@/components/square-payment-form"
+import StripeCheckoutButton from "@/components/stripe-checkout-button"
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -23,11 +23,8 @@ export default function CheckoutPage() {
   const { clearCart } = useCart()
 
   const [isLoading, setIsLoading] = useState(true)
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [cartItems, setCartItems] = useState<Array<{ productId: string; quantity: number }>>([])
   const [email, setEmail] = useState("")
-  const [orderComplete, setOrderComplete] = useState(false)
-  const [orderNumber, setOrderNumber] = useState("")
   const [deliveryMethod, setDeliveryMethod] = useState("shipping")
   const [currentStep, setCurrentStep] = useState(1)
 
@@ -126,111 +123,6 @@ export default function CheckoutPage() {
     window.scrollTo(0, 0)
   }
 
-  const handlePaymentSuccess = async (paymentResult: any) => {
-    // Generate a random order number
-    const randomPart = Math.floor(Math.random() * 10000)
-      .toString()
-      .padStart(4, "0")
-    const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, "")
-    const newOrderNumber = `OL-${datePart}-${randomPart}`
-
-    setOrderNumber(newOrderNumber)
-
-    // Send order notification emails
-    try {
-      const orderData = {
-        orderNumber: newOrderNumber,
-        customerDetails: {
-          name: formData.fullName,
-          email: email,
-          phone: formData.phoneNumber,
-        },
-        cartItems: cartProducts.map((item) => ({
-          name: item?.name,
-          quantity: item?.quantity,
-          price: item?.price,
-        })),
-        total: total,
-        deliveryMethod: deliveryMethod,
-        shippingAddress:
-          deliveryMethod === "shipping"
-            ? {
-                name: formData.fullName,
-                address: formData.address,
-                city: formData.city,
-                state: formData.state,
-                zipCode: formData.zipCode,
-                country: formData.country,
-              }
-            : null,
-      }
-
-      const response = await fetch("/api/orders/notify", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(orderData),
-      })
-
-      if (!response.ok) {
-        throw new Error("Failed to send order notifications")
-      }
-    } catch (error) {
-      console.error("Failed to send order notifications:", error)
-      // Don't fail the order if email fails
-    }
-
-    // Create order in Square after successful payment
-    try {
-      const orderResponse = await fetch("/api/square/create-order", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          cartItems: cartProducts.map((item) => ({
-            name: item?.name,
-            quantity: item?.quantity,
-            price: item?.price,
-          })),
-          customerDetails: {
-            name: formData.fullName,
-            email: email,
-          },
-          total: total,
-        }),
-      })
-
-      const orderResult = await orderResponse.json()
-      if (orderResult.success) {
-        console.log("Order created in Square:", orderResult.order.id)
-      }
-    } catch (error) {
-      console.error("Failed to create order in Square:", error)
-      // Don't fail the checkout if order creation fails
-    }
-
-    setOrderComplete(true)
-
-    // Clear cart
-    clearCart()
-
-    // Clear checkout data from localStorage
-    localStorage.removeItem("checkout_email")
-    localStorage.removeItem("checkout_cart")
-
-    window.scrollTo(0, 0)
-  }
-
-  const handlePaymentError = (error: Error) => {
-    toast({
-      title: "Payment failed",
-      description: error.message || "There was an error processing your payment. Please try again.",
-      variant: "destructive",
-    })
-  }
-
   const handleBackToShipping = () => {
     setCurrentStep(1)
     window.scrollTo(0, 0)
@@ -240,55 +132,6 @@ export default function CheckoutPage() {
     return (
       <div className="container py-20 flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
-  }
-
-  if (orderComplete) {
-    return (
-      <div className="container py-20 max-w-2xl mx-auto">
-        <div className="bg-muted/30 rounded-lg border p-8 text-center">
-          <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-6" />
-          <h1 className="text-3xl font-bold mb-4">Thank You for Your Order!</h1>
-          <p className="text-muted-foreground mb-6">Your payment was successful and your order has been placed.</p>
-
-          <div className="bg-background rounded-lg p-6 mb-8 inline-block">
-            <p className="text-sm text-muted-foreground">Order Number</p>
-            <p className="text-xl font-bold">{orderNumber}</p>
-          </div>
-
-          {deliveryMethod === "pickup" ? (
-            <div className="mb-8">
-              <h2 className="text-xl font-semibold mb-2">Pickup Information</h2>
-              <p className="text-muted-foreground">
-                Your order will be available for pickup at our Hartford location within 24 hours.
-              </p>
-              <p className="text-muted-foreground">
-                We'll contact you at {formData.phoneNumber} when your order is ready.
-              </p>
-              <div className="mt-4 p-4 bg-primary/10 rounded-lg inline-block">
-                <p className="font-medium">OilLabzZ Hartford</p>
-                <p className="text-muted-foreground">257 South Marshall Street</p>
-                <p className="text-muted-foreground">Hartford, CT 06105</p>
-                <p className="text-muted-foreground mt-2">Hours: Mon-Sat 10am-7pm, Sun 12pm-5pm</p>
-              </div>
-            </div>
-          ) : (
-            <p className="text-muted-foreground mb-8">
-              We've sent a confirmation email to {email} with your order details. You'll receive another email when your
-              order ships.
-            </p>
-          )}
-
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button asChild>
-              <Link href="/">Continue Shopping</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/contact">Contact Support</Link>
-            </Button>
-          </div>
-        </div>
       </div>
     )
   }
@@ -466,19 +309,36 @@ export default function CheckoutPage() {
 
           {currentStep === 2 && (
             <div className="space-y-8">
-              {/* Order Summary for Payment Step */}
+              {/* Payment with Stripe */}
               <div className="bg-muted/30 rounded-lg border p-6">
                 <h2 className="text-xl font-semibold mb-4">Payment</h2>
                 <p className="text-sm text-muted-foreground mb-6">
-                  Complete your purchase securely with Square. Your payment information is encrypted and secure.
+                  You'll be redirected to Stripe's secure checkout to complete your payment.
                 </p>
 
-                <SquarePaymentForm
+                <StripeCheckoutButton
                   amount={total}
-                  onPaymentSuccess={handlePaymentSuccess}
-                  onPaymentError={handlePaymentError}
-                  customerName={formData.fullName}
+                  cartItems={cartProducts.map((item) => ({
+                    name: item?.name || "",
+                    price: item?.price || 0,
+                    quantity: item?.quantity || 0,
+                    imageUrl: item?.imageUrl,
+                  }))}
                   customerEmail={email}
+                  customerName={formData.fullName}
+                  deliveryMethod={deliveryMethod}
+                  shippingAddress={
+                    deliveryMethod === "shipping"
+                      ? {
+                          name: formData.fullName,
+                          address: formData.address,
+                          city: formData.city,
+                          state: formData.state,
+                          zipCode: formData.zipCode,
+                          country: formData.country,
+                        }
+                      : null
+                  }
                 />
               </div>
 
@@ -533,30 +393,6 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* Shipping/Pickup Information Summary */}
-            <div className="mt-6 pt-4 border-t">
-              <h3 className="text-sm font-medium mb-2">
-                {deliveryMethod === "pickup" ? "Pickup" : "Shipping"} Information
-              </h3>
-              {deliveryMethod === "pickup" ? (
-                <div className="text-sm text-muted-foreground">
-                  <p>{formData.fullName}</p>
-                  <p>{formData.phoneNumber}</p>
-                  <p className="mt-2">OilLabzZ Hartford</p>
-                  <p>257 South Marshall Street, Hartford, CT 06105</p>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">
-                  <p>{formData.fullName}</p>
-                  <p>{formData.address}</p>
-                  <p>
-                    {formData.city}, {formData.state} {formData.zipCode}
-                  </p>
-                  <p>{formData.country === "US" ? "United States" : "Canada"}</p>
-                </div>
-              )}
-            </div>
-
             {/* Secure Checkout Badge */}
             <div className="mt-6 flex justify-center">
               <div className="flex items-center space-x-2">
@@ -575,7 +411,7 @@ export default function CheckoutPage() {
                   <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
                   <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                 </svg>
-                <span className="text-xs text-muted-foreground">Secure Checkout</span>
+                <span className="text-xs text-muted-foreground">Secure Checkout with Stripe</span>
               </div>
             </div>
           </div>

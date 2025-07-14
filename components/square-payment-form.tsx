@@ -42,8 +42,37 @@ export default function SquarePaymentForm({
   useEffect(() => {
     const init = async () => {
       try {
-        // Wait for DOM
-        await new Promise((resolve) => setTimeout(resolve, 2000))
+        console.log("Starting Square initialization...")
+
+        // Wait for DOM to be fully ready
+        await new Promise((resolve) => setTimeout(resolve, 3000))
+
+        // Create container element dynamically
+        const existingContainer = document.getElementById("card-container")
+        if (existingContainer) {
+          existingContainer.remove()
+        }
+
+        const container = document.createElement("div")
+        container.id = "card-container"
+        container.style.cssText = `
+          padding: 16px;
+          border: 2px solid #e5e7eb;
+          border-radius: 8px;
+          background-color: white;
+          min-height: 100px;
+          width: 100%;
+          display: block;
+        `
+
+        // Find the parent element and append
+        const parentElement = document.querySelector("[data-card-parent]")
+        if (parentElement) {
+          parentElement.appendChild(container)
+          console.log("Container created and appended")
+        } else {
+          throw new Error("Parent element not found")
+        }
 
         // Wait for Square SDK
         let attempts = 0
@@ -56,17 +85,23 @@ export default function SquarePaymentForm({
           throw new Error("Square SDK not loaded")
         }
 
+        console.log("Square SDK loaded, creating payments...")
+
         const payments = window.Square.payments(
           process.env.NEXT_PUBLIC_SQUARE_APPLICATION_ID!,
           process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID!,
         )
 
         const cardInstance = await payments.card()
+        console.log("Card instance created, attaching...")
+
         await cardInstance.attach("#card-container")
+        console.log("Card attached successfully!")
 
         setCard(cardInstance)
         setIsLoading(false)
       } catch (err: any) {
+        console.error("Square initialization error:", err)
         setError(err.message)
         setIsLoading(false)
       }
@@ -117,8 +152,8 @@ export default function SquarePaymentForm({
   if (error) {
     return (
       <div className="text-center py-8">
-        <p className="text-red-500 mb-4">{error}</p>
-        <Button onClick={() => window.location.reload()}>Retry</Button>
+        <p className="text-red-500 mb-4">Payment Error: {error}</p>
+        <Button onClick={() => window.location.reload()}>Retry Payment Setup</Button>
       </div>
     )
   }
@@ -127,7 +162,7 @@ export default function SquarePaymentForm({
     return (
       <div className="text-center py-8">
         <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-        <p>Loading payment form...</p>
+        <p>Setting up secure payment form...</p>
       </div>
     )
   }
@@ -141,17 +176,29 @@ export default function SquarePaymentForm({
           onChange={(e) => setCardholderName(e.target.value)}
           required
           disabled={isProcessing}
+          placeholder="Enter cardholder name"
         />
       </div>
 
       <div>
         <Label>Card Information</Label>
-        <div id="card-container" className="p-4 border rounded-lg bg-white min-h-[100px]" />
+        <div data-card-parent className="mt-2">
+          {/* Container will be created here dynamically */}
+        </div>
       </div>
 
-      <Button type="submit" className="w-full" disabled={isProcessing || !card}>
-        {isProcessing ? "Processing..." : `Pay $${amount.toFixed(2)}`}
+      <Button type="submit" className="w-full" size="lg" disabled={isProcessing || !card}>
+        {isProcessing ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Processing Payment...
+          </>
+        ) : (
+          `Pay $${amount.toFixed(2)}`
+        )}
       </Button>
+
+      <div className="text-center text-xs text-muted-foreground">🔒 Secured by Square</div>
     </form>
   )
 }
